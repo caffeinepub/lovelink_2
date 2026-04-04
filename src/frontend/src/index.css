@@ -1,0 +1,198 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Figtree - Body Font */
+@font-face {
+  font-family: "Figtree";
+  src: url("/assets/fonts/Figtree.woff2") format("woff2");
+  font-weight: 300 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* Plus Jakarta Sans - UI/Nav Font */
+@font-face {
+  font-family: "Plus Jakarta Sans";
+  src: url("/assets/fonts/PlusJakartaSans.woff2") format("woff2");
+  font-weight: 300 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* Bricolage Grotesque - Display/Heading Font */
+@font-face {
+  font-family: "Bricolage Grotesque";
+  src: url("/assets/fonts/BricolageGrotesque.woff2") format("woff2");
+  font-weight: 200 800;
+  font-style: normal;
+  font-display: swap;
+}
+
+@layer base {
+  :root {
+    --radius: 1rem;
+
+    /* ─── LoveLink Dark Glassmorphic Theme ─── */
+    /* Background: deep navy */
+    --background: 0.11 0.02 265;
+    --foreground: 0.96 0.01 265;
+
+    /* Card: dark glass surface */
+    --card: 0.16 0.025 265;
+    --card-foreground: 0.96 0.01 265;
+
+    /* Popover */
+    --popover: 0.18 0.03 265;
+    --popover-foreground: 0.96 0.01 265;
+
+    /* Primary: purple */
+    --primary: 0.55 0.24 295;
+    --primary-foreground: 0.98 0 0;
+
+    /* Secondary: dark muted */
+    --secondary: 0.2 0.03 265;
+    --secondary-foreground: 0.88 0.02 265;
+
+    /* Muted */
+    --muted: 0.18 0.025 265;
+    --muted-foreground: 0.62 0.04 265;
+
+    /* Accent: pink-magenta */
+    --accent: 0.62 0.24 340;
+    --accent-foreground: 0.98 0 0;
+
+    /* Destructive */
+    --destructive: 0.577 0.245 27.325;
+    --destructive-foreground: 0.985 0 0;
+
+    /* Border */
+    --border: 0.3 0.04 265;
+    --input: 0.22 0.03 265;
+    --ring: 0.55 0.24 295;
+
+    /* Charts */
+    --chart-1: 0.55 0.24 295;
+    --chart-2: 0.62 0.24 340;
+    --chart-3: 0.58 0.22 265;
+    --chart-4: 0.65 0.18 200;
+    --chart-5: 0.7 0.15 150;
+
+    /* Sidebar */
+    --sidebar: 0.13 0.02 265;
+    --sidebar-foreground: 0.96 0.01 265;
+    --sidebar-primary: 0.55 0.24 295;
+    --sidebar-primary-foreground: 0.98 0 0;
+    --sidebar-accent: 0.2 0.03 265;
+    --sidebar-accent-foreground: 0.88 0.02 265;
+    --sidebar-border: 0.26 0.04 265;
+    --sidebar-ring: 0.55 0.24 295;
+
+    /* Custom LoveLink tokens */
+    --ll-purple: 0.55 0.24 295;
+    --ll-violet: 0.5 0.26 305;
+    --ll-pink: 0.62 0.24 340;
+    --ll-green: 0.65 0.2 155;
+    --ll-navy: 0.09 0.02 265;
+    --ll-card-bg: 0.15 0.025 265;
+    --ll-card-border: 0.28 0.04 265;
+  }
+
+  html {
+    color-scheme: dark;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-body;
+    background: linear-gradient(
+      135deg,
+      oklch(0.09 0.025 265) 0%,
+      oklch(0.11 0.02 280) 50%,
+      oklch(0.1 0.03 310) 100%
+    );
+    min-height: 100vh;
+  }
+}
+
+@layer utilities {
+  /* Gradient text */
+  .text-gradient {
+    background: linear-gradient(
+      135deg,
+      oklch(var(--ll-purple)),
+      oklch(var(--ll-violet)),
+      oklch(var(--ll-pink))
+    );
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  /* Glass card */
+  .glass-card {
+    background: oklch(var(--ll-card-bg) / 0.75);
+    backdrop-filter: blur(16px) saturate(1.4);
+    -webkit-backdrop-filter: blur(16px) saturate(1.4);
+    border: 1px solid oklch(var(--ll-card-border) / 0.6);
+    box-shadow: 0 4px 24px oklch(0.05 0.01 265 / 0.6), 0 1px 2px
+      oklch(0.05 0.01 265 / 0.4), inset 0 1px 0 oklch(1 0 0 / 0.04);
+  }
+
+  /* Purple gradient button */
+  .btn-purple {
+    background: linear-gradient(
+      135deg,
+      oklch(var(--ll-purple)),
+      oklch(var(--ll-violet)),
+      oklch(var(--ll-pink))
+    );
+    color: white;
+    border: none;
+    transition: opacity 0.2s, transform 0.15s, box-shadow 0.2s;
+  }
+
+  .btn-purple:hover {
+    opacity: 0.9;
+    transform: translateY(-1px);
+    box-shadow: 0 8px 24px oklch(var(--ll-violet) / 0.45), 0 0 32px
+      oklch(var(--ll-pink) / 0.2);
+  }
+
+  .btn-purple:active {
+    transform: translateY(0);
+  }
+
+  /* Glow effects */
+  .glow-purple {
+    box-shadow: 0 0 20px oklch(var(--ll-purple) / 0.4);
+  }
+
+  .glow-pink {
+    box-shadow: 0 0 20px oklch(var(--ll-pink) / 0.4);
+  }
+
+  /* Scrollbar */
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 4px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: oklch(var(--ll-card-border));
+    border-radius: 9999px;
+  }
+
+  /* Distance badge */
+  .distance-badge {
+    background: oklch(var(--ll-purple) / 0.2);
+    border: 1px solid oklch(var(--ll-purple) / 0.4);
+    color: oklch(0.8 0.18 295);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+}
