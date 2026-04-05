@@ -7,6 +7,7 @@ import {
   Compass,
   Heart,
   MessageCircle,
+  Trophy,
   User,
   Wallet,
 } from "lucide-react";
@@ -18,16 +19,17 @@ const NAV_LINKS = [
   { to: "/explore", label: "Explore", icon: Compass },
   { to: "/messages", label: "Messages", icon: MessageCircle },
   { to: "/matches", label: "Matches", icon: Heart },
+  { to: "/leaderboard", label: "Leaderboard", icon: Trophy },
   { to: "/notifications", label: "Notifications", icon: Bell },
   { to: "/wallet", label: "Wallet", icon: Wallet },
   { to: "/profile", label: "Profile", icon: User },
 ];
 
-// Mobile bottom pill: keep 5 items (drop Notifications, keep Wallet)
+// Mobile bottom pill: keep 5 items
 const MOBILE_NAV_LINKS = [
   { to: "/explore", label: "Explore", icon: Compass },
   { to: "/messages", label: "Messages", icon: MessageCircle },
-  { to: "/matches", label: "Matches", icon: Heart },
+  { to: "/leaderboard", label: "Board", icon: Trophy },
   { to: "/wallet", label: "Wallet", icon: Wallet },
   { to: "/profile", label: "Profile", icon: User },
 ];
@@ -110,7 +112,7 @@ export default function Layout({ children }: { children: ReactNode }) {
                 <Link
                   key={to}
                   to={to}
-                  data-ocid={`nav.${label.toLowerCase()}.link`}
+                  data-ocid={`nav.${label.toLowerCase().replace(" ", "-")}.link`}
                   className="relative flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-ui font-medium transition-colors"
                   style={{
                     color: isActive
@@ -254,9 +256,7 @@ export default function Layout({ children }: { children: ReactNode }) {
                 }}
               >
                 <Icon className="w-5 h-5" />
-                <span className="text-[10px] font-ui font-medium">
-                  {label.slice(0, 4)}
-                </span>
+                <span className="text-[10px] font-ui font-medium">{label}</span>
               </Link>
             );
           })}

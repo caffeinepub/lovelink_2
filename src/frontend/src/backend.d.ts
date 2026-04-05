@@ -47,6 +47,18 @@ export interface Tip {
     amount_e8s: bigint;
     timestamp: Time;
 }
+export interface LeaderboardEntry {
+    user: Principal;
+    name: string;
+    totalSent: bigint;
+}
+export interface Review {
+    reviewerId: Principal;
+    targetId: Principal;
+    rating: bigint;
+    text: string;
+    timestamp: Time;
+}
 export enum NotificationType {
     newMatch = "newMatch",
     tipReceived = "tipReceived",
@@ -65,14 +77,17 @@ export interface backendInterface {
     dislikeUser(other: Principal): Promise<void>;
     getActivityFeed(): Promise<Array<[Notification, bigint]>>;
     getAllProfiles(): Promise<Array<Profile>>;
+    getAverageRating(user: Principal): Promise<number>;
     getCallerProfile(): Promise<Profile | null>;
     getCallerUserProfile(): Promise<Profile | null>;
     getCallerUserRole(): Promise<UserRole>;
     getExploreProfiles(): Promise<Array<Profile>>;
+    getLeaderboard(limit: bigint): Promise<Array<LeaderboardEntry>>;
     getMatches(): Promise<Array<Profile>>;
     getMessagesWithUser(user: Principal): Promise<Array<Message>>;
     getNotifications(): Promise<Array<Notification>>;
     getProfile(principal: Principal): Promise<Profile | null>;
+    getReviews(user: Principal): Promise<Array<Review>>;
     getTipHistory(user: Principal): Promise<Array<Tip>>;
     getTopTippedUsers(): Promise<Array<Principal>>;
     getTotalTips(user: Principal): Promise<bigint>;
@@ -86,5 +101,6 @@ export interface backendInterface {
     saveCallerUserProfile(profile: Profile): Promise<void>;
     sendMessage(to: Principal, content: string): Promise<void>;
     setProfilePicture(pic: ExternalBlob): Promise<void>;
+    submitReview(target: Principal, rating: bigint, text: string): Promise<void>;
     tip(user: Principal, amount_e8s: bigint): Promise<void>;
 }

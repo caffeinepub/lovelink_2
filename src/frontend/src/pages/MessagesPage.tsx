@@ -1,18 +1,21 @@
+import { ExternalBlob } from "@/backend";
 import Layout from "@/components/Layout";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { useActor } from "@/hooks/useActor";
 import {
   ArrowLeft,
   Camera,
-  Eye,
-  EyeOff,
+  FolderOpen,
   Heart,
   ImageIcon,
   Lock,
   MessageCircle,
   Send,
+  X,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 
 const CONTACTS = [
   {
@@ -52,13 +55,14 @@ interface ChatMessage {
   kind: MsgKind;
   viewOnceState?: ViewOnceState;
   viewOnceBg?: string;
+  imageUrl?: string;
 }
 
 const INITIAL_MESSAGES: Record<string, ChatMessage[]> = {
   c1: [
     {
       id: "1",
-      content: "Hey! I saw your profile and love that you’re into hiking! ⛰️",
+      content: "Hey! I saw your profile and love that you're into hiking! ⛰️",
       isSelf: false,
       time: "10:22",
       kind: "text",
@@ -89,7 +93,7 @@ const INITIAL_MESSAGES: Record<string, ChatMessage[]> = {
     },
     {
       id: "5",
-      content: "That’s on my bucket list! We should plan a trip sometime 💕",
+      content: "That's on my bucket list! We should plan a trip sometime 💕",
       isSelf: true,
       time: "10:31",
       kind: "text",
@@ -98,14 +102,14 @@ const INITIAL_MESSAGES: Record<string, ChatMessage[]> = {
   c2: [
     {
       id: "1",
-      content: "Love your bio about cooking! What’s your specialty dish?",
+      content: "Love your bio about cooking! What's your specialty dish?",
       isSelf: true,
       time: "09:15",
       kind: "text",
     },
     {
       id: "2",
-      content: "Homemade pasta from scratch 🍝 I’ll cook for you sometime!",
+      content: "Homemade pasta from scratch 🍝 I'll cook for you sometime!",
       isSelf: false,
       time: "09:18",
       kind: "text",
@@ -131,14 +135,14 @@ const INITIAL_MESSAGES: Record<string, ChatMessage[]> = {
     },
     {
       id: "2",
-      content: "Thank you! I actually do – it’s been my passion since school.",
+      content: "Thank you! I actually do – it's been my passion since school.",
       isSelf: true,
       time: "Yesterday",
       kind: "text",
     },
     {
       id: "3",
-      content: "You should start a brand! I’d totally buy your pieces 😍",
+      content: "You should start a brand! I'd totally buy your pieces 😍",
       isSelf: false,
       time: "Yesterday",
       kind: "text",
@@ -146,6 +150,101 @@ const INITIAL_MESSAGES: Record<string, ChatMessage[]> = {
   ],
 };
 
+// ── ImageSourceSheet ────────────────────────────────────────────────────────
+function ImageSourceSheet({
+  onChooseLibrary,
+  onTakePhoto,
+  onCancel,
+}: {
+  onChooseLibrary: () => void;
+  onTakePhoto: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <motion.div
+      key="msg-sheet-overlay"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex items-end justify-center"
+      style={{
+        background: "oklch(0.05 0.015 265 / 0.75)",
+        backdropFilter: "blur(4px)",
+      }}
+      onClick={onCancel}
+    >
+      <motion.div
+        initial={{ y: "100%" }}
+        animate={{ y: 0 }}
+        exit={{ y: "100%" }}
+        transition={{ type: "spring", damping: 28, stiffness: 300 }}
+        className="w-full max-w-sm mb-6 mx-4 rounded-2xl overflow-hidden"
+        style={{
+          background: "oklch(0.17 0.028 265)",
+          border: "1px solid oklch(0.30 0.06 295 / 0.5)",
+          boxShadow: "0 -8px 40px oklch(0.10 0.02 265 / 0.8)",
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="px-5 pt-5 pb-2">
+          <p
+            className="text-xs font-ui font-semibold uppercase tracking-widest text-center"
+            style={{ color: "oklch(0.55 0.06 295)" }}
+          >
+            Send View-Once Image
+          </p>
+        </div>
+        <div className="px-4 pb-4 space-y-2">
+          <button
+            type="button"
+            data-ocid="messages.upload_button"
+            onClick={onChooseLibrary}
+            className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl text-sm font-ui font-medium transition-all hover:opacity-80 active:scale-[0.98]"
+            style={{
+              background:
+                "linear-gradient(135deg, oklch(0.55 0.24 295 / 0.2), oklch(0.62 0.24 340 / 0.2))",
+              border: "1px solid oklch(0.55 0.24 295 / 0.4)",
+              color: "oklch(0.90 0.12 295)",
+            }}
+          >
+            <FolderOpen className="w-5 h-5" />
+            Choose from Library
+          </button>
+          <button
+            type="button"
+            data-ocid="messages.camera_button"
+            onClick={onTakePhoto}
+            className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl text-sm font-ui font-medium transition-all hover:opacity-80 active:scale-[0.98]"
+            style={{
+              background:
+                "linear-gradient(135deg, oklch(0.55 0.24 295 / 0.2), oklch(0.62 0.24 340 / 0.2))",
+              border: "1px solid oklch(0.55 0.24 295 / 0.4)",
+              color: "oklch(0.90 0.12 295)",
+            }}
+          >
+            <Camera className="w-5 h-5" />
+            Take Photo
+          </button>
+          <button
+            type="button"
+            data-ocid="messages.cancel_button"
+            onClick={onCancel}
+            className="w-full px-4 py-3 rounded-xl text-sm font-ui font-medium transition-all hover:opacity-70"
+            style={{
+              background: "oklch(0.22 0.025 265)",
+              border: "1px solid oklch(0.30 0.04 265)",
+              color: "oklch(0.60 0.04 265)",
+            }}
+          >
+            Cancel
+          </button>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+// ── ViewOnceMessage ─────────────────────────────────────────────────────────
 function ViewOnceMessage({
   msg,
   onView,
@@ -176,12 +275,22 @@ function ViewOnceMessage({
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
-        className="w-48 h-36 rounded-2xl flex items-center justify-center overflow-hidden"
+        className="relative w-48 h-48 rounded-2xl overflow-hidden"
         style={{
           background: `linear-gradient(135deg, ${msg.viewOnceBg}99, ${msg.viewOnceBg}44)`,
         }}
       >
-        <span className="font-display text-4xl opacity-60">📸</span>
+        {msg.imageUrl ? (
+          <img
+            src={msg.imageUrl}
+            alt="View once"
+            className="w-full h-full object-cover"
+          />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center">
+            <span className="font-display text-4xl opacity-60">📸</span>
+          </div>
+        )}
       </motion.div>
     );
   }
@@ -204,25 +313,33 @@ function ViewOnceMessage({
   );
 }
 
+// ── ChatWindow ───────────────────────────────────────────────────────────────
 function ChatWindow({
   contact,
   messages,
   onSend,
+  onSendViewOnce,
   onViewOnce,
   onBack,
 }: {
   contact: (typeof CONTACTS)[0];
   messages: ChatMessage[];
   onSend: (text: string) => void;
+  onSendViewOnce: (imageUrl: string) => void;
   onViewOnce: (msgId: string) => void;
   onBack: () => void;
 }) {
   const [text, setText] = useState("");
+  const [showSheet, setShowSheet] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
+  const libraryRef = useRef<HTMLInputElement>(null);
+  const cameraRef = useRef<HTMLInputElement>(null);
+  const { actor } = useActor();
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
-  }); // biome-ignore lint/correctness/useExhaustiveDependencies: scroll on new message
+  });
 
   const handleSend = () => {
     if (!text.trim()) return;
@@ -230,8 +347,33 @@ function ChatWindow({
     setText("");
   };
 
-  const handleAttachImage = () => {
-    onSend("__VIEWONCE__");
+  const handleImageFile = async (file: File) => {
+    setIsUploading(true);
+    try {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      const blob = ExternalBlob.fromBytes(bytes);
+
+      if (actor) {
+        // Upload via blob storage – setProfilePicture is the available upload method
+        // We use the blob's local URL for display in this context
+        await actor.setProfilePicture(blob);
+      }
+
+      const imageUrl = blob.getDirectURL();
+      onSendViewOnce(imageUrl);
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to send image. Please try again.");
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
+    await handleImageFile(file);
   };
 
   return (
@@ -339,16 +481,24 @@ function ChatWindow({
           <button
             type="button"
             data-ocid="messages.upload_button"
-            onClick={handleAttachImage}
+            onClick={() => setShowSheet(true)}
+            disabled={isUploading}
             title="Send view-once image"
-            className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 transition-colors hover:opacity-80"
+            className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 transition-colors hover:opacity-80 disabled:opacity-40"
             style={{
               background: "oklch(0.18 0.025 265)",
               border: "1px solid oklch(0.26 0.04 265)",
               color: "oklch(0.65 0.18 295)",
             }}
           >
-            <ImageIcon className="w-4.5 h-4.5" />
+            {isUploading ? (
+              <span
+                className="w-4 h-4 border-2 border-purple-400/30 border-t-purple-400 rounded-full animate-spin"
+                data-ocid="messages.loading_state"
+              />
+            ) : (
+              <ImageIcon className="w-4 h-4" />
+            )}
           </button>
           <input
             data-ocid="messages.input"
@@ -386,10 +536,45 @@ function ChatWindow({
           📷 Camera icon sends a view-once image that disappears after viewing
         </p>
       </div>
+
+      {/* Hidden file inputs – images only */}
+      <input
+        ref={libraryRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={handleFileChange}
+      />
+      <input
+        ref={cameraRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        className="hidden"
+        onChange={handleFileChange}
+      />
+
+      {/* Image Source Sheet */}
+      <AnimatePresence>
+        {showSheet && (
+          <ImageSourceSheet
+            onChooseLibrary={() => {
+              setShowSheet(false);
+              setTimeout(() => libraryRef.current?.click(), 50);
+            }}
+            onTakePhoto={() => {
+              setShowSheet(false);
+              setTimeout(() => cameraRef.current?.click(), 50);
+            }}
+            onCancel={() => setShowSheet(false)}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }
 
+// ── Main Page ────────────────────────────────────────────────────────────────
 export default function MessagesPage() {
   const [selectedId, setSelectedId] = useState<string>(CONTACTS[0].id);
   const [showChat, setShowChat] = useState(false);
@@ -401,30 +586,36 @@ export default function MessagesPage() {
   const messages = allMessages[selectedId] ?? [];
 
   const handleSend = (text: string) => {
-    const newMsg: ChatMessage =
-      text === "__VIEWONCE__"
-        ? {
-            id: `${Date.now()}`,
-            content: "",
-            isSelf: true,
-            time: new Date().toLocaleTimeString([], {
-              hour: "2-digit",
-              minute: "2-digit",
-            }),
-            kind: "viewOnce",
-            viewOnceState: "unseen",
-            viewOnceBg: "#7C3AED",
-          }
-        : {
-            id: `${Date.now()}`,
-            content: text,
-            isSelf: true,
-            time: new Date().toLocaleTimeString([], {
-              hour: "2-digit",
-              minute: "2-digit",
-            }),
-            kind: "text",
-          };
+    const newMsg: ChatMessage = {
+      id: `${Date.now()}`,
+      content: text,
+      isSelf: true,
+      time: new Date().toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+      }),
+      kind: "text",
+    };
+    setAllMessages((prev) => ({
+      ...prev,
+      [selectedId]: [...(prev[selectedId] ?? []), newMsg],
+    }));
+  };
+
+  const handleSendViewOnce = (imageUrl: string) => {
+    const newMsg: ChatMessage = {
+      id: `${Date.now()}`,
+      content: "",
+      isSelf: true,
+      time: new Date().toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+      }),
+      kind: "viewOnce",
+      viewOnceState: "unseen",
+      viewOnceBg: "#7C3AED",
+      imageUrl,
+    };
     setAllMessages((prev) => ({
       ...prev,
       [selectedId]: [...(prev[selectedId] ?? []), newMsg],
@@ -432,7 +623,6 @@ export default function MessagesPage() {
   };
 
   const handleViewOnce = (msgId: string) => {
-    // Set to "viewing"
     setAllMessages((prev) => ({
       ...prev,
       [selectedId]: (prev[selectedId] ?? []).map((m) =>
@@ -441,7 +631,6 @@ export default function MessagesPage() {
           : m,
       ),
     }));
-    // After 3s set to "viewed"
     setTimeout(() => {
       setAllMessages((prev) => ({
         ...prev,
@@ -583,13 +772,16 @@ export default function MessagesPage() {
 
             {/* Chat window */}
             <div
-              className={`flex-1 flex flex-col min-w-0 ${!showChat ? "hidden md:flex" : "flex"}`}
+              className={`flex-1 flex flex-col min-w-0 ${
+                !showChat ? "hidden md:flex" : "flex"
+              }`}
             >
               {selectedContact ? (
                 <ChatWindow
                   contact={selectedContact}
                   messages={messages}
                   onSend={handleSend}
+                  onSendViewOnce={handleSendViewOnce}
                   onViewOnce={handleViewOnce}
                   onBack={() => setShowChat(false)}
                 />

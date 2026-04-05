@@ -228,3 +228,70 @@ export function useSetProfilePicture() {
     },
   });
 }
+
+export function useGetLeaderboard(limit: number) {
+  const { actor, isFetching: actorFetching } = useActor();
+  return useQuery<import("@/backend.d").LeaderboardEntry[]>({
+    queryKey: ["leaderboard", limit],
+    queryFn: async () => {
+      if (!actor) return [];
+      return (actor as any).getLeaderboard(BigInt(limit));
+    },
+    enabled: !!actor && !actorFetching,
+    refetchInterval: 60000,
+  });
+}
+
+export function useGetReviews(
+  user: import("@icp-sdk/core/principal").Principal | null,
+) {
+  const { actor, isFetching: actorFetching } = useActor();
+  return useQuery<import("@/backend.d").Review[]>({
+    queryKey: ["reviews", user?.toString() ?? "caller"],
+    queryFn: async () => {
+      if (!actor) return [];
+      if (!user) return [];
+      return (actor as any).getReviews(user);
+    },
+    enabled: !!actor && !actorFetching,
+  });
+}
+
+export function useGetAverageRating(
+  user: import("@icp-sdk/core/principal").Principal | null,
+) {
+  const { actor, isFetching: actorFetching } = useActor();
+  return useQuery<number>({
+    queryKey: ["averageRating", user?.toString() ?? "caller"],
+    queryFn: async () => {
+      if (!actor || !user) return 0;
+      return (actor as any).getAverageRating(user);
+    },
+    enabled: !!actor && !actorFetching && !!user,
+  });
+}
+
+export function useSubmitReview() {
+  const { actor } = useActor();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      target,
+      rating,
+      text,
+    }: {
+      target: import("@icp-sdk/core/principal").Principal;
+      rating: number;
+      text: string;
+    }) => {
+      if (!actor) throw new Error("Actor not available");
+      return (actor as any).submitReview(target, BigInt(rating), text);
+    },
+    onSuccess: (_, vars) => {
+      qc.invalidateQueries({ queryKey: ["reviews", vars.target?.toString()] });
+      qc.invalidateQueries({
+        queryKey: ["averageRating", vars.target?.toString()],
+      });
+    },
+  });
+}

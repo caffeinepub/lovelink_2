@@ -1,15 +1,26 @@
 import { type Gender, type Intent, type Orientation, useAuth } from "@/App";
+import { ExternalBlob } from "@/backend";
 import Layout from "@/components/Layout";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { useActor } from "@/hooks/useActor";
 import { useNavigate } from "@/router";
-import { ArrowLeft, Camera, Check, MapPin, Plus, Save, X } from "lucide-react";
-import { motion } from "motion/react";
+import {
+  ArrowLeft,
+  Camera,
+  Check,
+  FolderOpen,
+  MapPin,
+  Plus,
+  Save,
+  X,
+} from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
 
-type PhotoSlot = { url: string; file?: File; slotId: string } | null;
+type PhotoSlot = { url: string; slotId: string; uploading?: boolean } | null;
 
 const INITIAL_PHOTOS: PhotoSlot[] = [
   { url: "/assets/generated/profile-1.dim_400x500.jpg", slotId: "slot-0" },
@@ -19,9 +30,105 @@ const INITIAL_PHOTOS: PhotoSlot[] = [
   null,
 ];
 
+// ── ImageSourceSheet ────────────────────────────────────────────────────────
+function ImageSourceSheet({
+  onChooseLibrary,
+  onTakePhoto,
+  onCancel,
+}: {
+  onChooseLibrary: () => void;
+  onTakePhoto: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <motion.div
+      key="image-sheet-overlay"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex items-end justify-center"
+      style={{
+        background: "oklch(0.05 0.015 265 / 0.75)",
+        backdropFilter: "blur(4px)",
+      }}
+      onClick={onCancel}
+    >
+      <motion.div
+        initial={{ y: "100%" }}
+        animate={{ y: 0 }}
+        exit={{ y: "100%" }}
+        transition={{ type: "spring", damping: 28, stiffness: 300 }}
+        className="w-full max-w-sm mb-6 mx-4 rounded-2xl overflow-hidden"
+        style={{
+          background: "oklch(0.17 0.028 265)",
+          border: "1px solid oklch(0.30 0.06 295 / 0.5)",
+          boxShadow: "0 -8px 40px oklch(0.10 0.02 265 / 0.8)",
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="px-5 pt-5 pb-2">
+          <p
+            className="text-xs font-ui font-semibold uppercase tracking-widest text-center"
+            style={{ color: "oklch(0.55 0.06 295)" }}
+          >
+            Add Photo
+          </p>
+        </div>
+        <div className="px-4 pb-4 space-y-2">
+          <button
+            type="button"
+            data-ocid="profile.upload_button"
+            onClick={onChooseLibrary}
+            className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl text-sm font-ui font-medium transition-all hover:opacity-80 active:scale-[0.98]"
+            style={{
+              background:
+                "linear-gradient(135deg, oklch(0.55 0.24 295 / 0.2), oklch(0.62 0.24 340 / 0.2))",
+              border: "1px solid oklch(0.55 0.24 295 / 0.4)",
+              color: "oklch(0.90 0.12 295)",
+            }}
+          >
+            <FolderOpen className="w-5 h-5" />
+            Choose from Library
+          </button>
+          <button
+            type="button"
+            data-ocid="profile.camera_button"
+            onClick={onTakePhoto}
+            className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl text-sm font-ui font-medium transition-all hover:opacity-80 active:scale-[0.98]"
+            style={{
+              background:
+                "linear-gradient(135deg, oklch(0.55 0.24 295 / 0.2), oklch(0.62 0.24 340 / 0.2))",
+              border: "1px solid oklch(0.55 0.24 295 / 0.4)",
+              color: "oklch(0.90 0.12 295)",
+            }}
+          >
+            <Camera className="w-5 h-5" />
+            Take Photo
+          </button>
+          <button
+            type="button"
+            data-ocid="profile.cancel_button"
+            onClick={onCancel}
+            className="w-full px-4 py-3 rounded-xl text-sm font-ui font-medium transition-all hover:opacity-70"
+            style={{
+              background: "oklch(0.22 0.025 265)",
+              border: "1px solid oklch(0.30 0.04 265)",
+              color: "oklch(0.60 0.04 265)",
+            }}
+          >
+            Cancel
+          </button>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+// ── Main Component ──────────────────────────────────────────────────────────
 export default function EditProfilePage() {
   const { currentUser, setCurrentUser } = useAuth();
   const navigate = useNavigate();
+  const { actor } = useActor();
 
   const [name, setName] = useState(currentUser.name);
   const [age, setAge] = useState("27");
@@ -43,20 +150,61 @@ export default function EditProfilePage() {
   const [interestInput, setInterestInput] = useState("");
   const [photos, setPhotos] = useState<PhotoSlot[]>(INITIAL_PHOTOS);
   const [isSaving, setIsSaving] = useState(false);
-  const fileRefs = useRef<(HTMLInputElement | null)[]>([]);
 
-  const handlePhotoSelect = (
+  // Sheet state
+  const [sheetSlot, setSheetSlot] = useState<number | null>(null);
+  const libraryRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const cameraRefs = useRef<(HTMLInputElement | null)[]>([]);
+
+  const uploadPhoto = async (idx: number, file: File) => {
+    // Preview immediately
+    const previewUrl = URL.createObjectURL(file);
+    setPhotos((prev) => {
+      const next = [...prev];
+      next[idx] = { url: previewUrl, slotId: `slot-${idx}`, uploading: true };
+      return next;
+    });
+
+    try {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      const blob = ExternalBlob.fromBytes(bytes);
+
+      if (actor) {
+        await actor.setProfilePicture(blob);
+      }
+
+      const finalUrl = blob.getDirectURL();
+      setPhotos((prev) => {
+        const next = [...prev];
+        next[idx] = { url: finalUrl, slotId: `slot-${idx}`, uploading: false };
+        return next;
+      });
+      toast.success("Photo uploaded! 🖼️");
+    } catch (err) {
+      console.error(err);
+      toast.error("Upload failed. Please try again.");
+      // Revert to preview on error (still show it locally)
+      setPhotos((prev) => {
+        const next = [...prev];
+        next[idx] = {
+          url: previewUrl,
+          slotId: `slot-${idx}`,
+          uploading: false,
+        };
+        return next;
+      });
+    }
+  };
+
+  const handleFileChange = (
     idx: number,
     e: React.ChangeEvent<HTMLInputElement>,
   ) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const url = URL.createObjectURL(file);
-    setPhotos((prev) => {
-      const next = [...prev];
-      next[idx] = { url, file, slotId: `slot-${idx}` };
-      return next;
-    });
+    // Reset input so same file can be re-selected
+    e.target.value = "";
+    uploadPhoto(idx, file);
   };
 
   const removePhoto = (idx: number) => {
@@ -180,7 +328,6 @@ export default function EditProfilePage() {
     );
   };
 
-  // Stable slot keys — never change order, so index key is safe here via named IDs
   const SLOT_IDS = ["slot-0", "slot-1", "slot-2", "slot-3", "slot-4"];
 
   return (
@@ -237,23 +384,39 @@ export default function EditProfilePage() {
                           className="w-full h-full rounded-xl bg-cover bg-center"
                           style={{ backgroundImage: `url(${slot.url})` }}
                         />
-                        <button
-                          type="button"
-                          onClick={() => removePhoto(idx)}
-                          className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full flex items-center justify-center"
-                          style={{
-                            background: "oklch(0.60 0.22 27)",
-                            color: "white",
-                          }}
-                        >
-                          <X className="w-3 h-3" />
-                        </button>
+                        {/* Upload spinner overlay */}
+                        {slot.uploading && (
+                          <div
+                            className="absolute inset-0 rounded-xl flex items-center justify-center"
+                            style={{
+                              background: "oklch(0.10 0.02 265 / 0.65)",
+                            }}
+                          >
+                            <span
+                              className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"
+                              data-ocid={`profile.loading_state.${idx + 1}`}
+                            />
+                          </div>
+                        )}
+                        {!slot.uploading && (
+                          <button
+                            type="button"
+                            onClick={() => removePhoto(idx)}
+                            className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full flex items-center justify-center"
+                            style={{
+                              background: "oklch(0.60 0.22 27)",
+                              color: "white",
+                            }}
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        )}
                       </>
                     ) : (
                       <button
                         type="button"
                         data-ocid={`profile.upload_button.${idx + 1}`}
-                        onClick={() => fileRefs.current[idx]?.click()}
+                        onClick={() => setSheetSlot(idx)}
                         className="w-full h-full rounded-xl flex items-center justify-center transition-all hover:opacity-70"
                         style={{
                           background: "oklch(0.18 0.025 265)",
@@ -266,14 +429,25 @@ export default function EditProfilePage() {
                         />
                       </button>
                     )}
+                    {/* Hidden image-only file inputs */}
                     <input
                       ref={(el) => {
-                        fileRefs.current[idx] = el;
+                        libraryRefs.current[idx] = el;
                       }}
                       type="file"
                       accept="image/*"
                       className="hidden"
-                      onChange={(e) => handlePhotoSelect(idx, e)}
+                      onChange={(e) => handleFileChange(idx, e)}
+                    />
+                    <input
+                      ref={(el) => {
+                        cameraRefs.current[idx] = el;
+                      }}
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      className="hidden"
+                      onChange={(e) => handleFileChange(idx, e)}
                     />
                   </div>
                 );
@@ -533,6 +707,25 @@ export default function EditProfilePage() {
           </button>
         </motion.div>
       </div>
+
+      {/* Image Source Sheet */}
+      <AnimatePresence>
+        {sheetSlot !== null && (
+          <ImageSourceSheet
+            onChooseLibrary={() => {
+              const idx = sheetSlot;
+              setSheetSlot(null);
+              setTimeout(() => libraryRefs.current[idx]?.click(), 50);
+            }}
+            onTakePhoto={() => {
+              const idx = sheetSlot;
+              setSheetSlot(null);
+              setTimeout(() => cameraRefs.current[idx]?.click(), 50);
+            }}
+            onCancel={() => setSheetSlot(null)}
+          />
+        )}
+      </AnimatePresence>
     </Layout>
   );
 }

@@ -1,35 +1,33 @@
 # LoveLink
 
 ## Current State
-LoveLink is a decentralized dating PWA with EVM wallet + Internet Identity login, geolocation-based discovery, tipping (AFUK/USDC/ICP), and real-time chat. The bottom navigation bar on mobile has 5 tabs: Explore, Messages, Matches, Notifications, Profile. There is no Wallet tab.
+LoveLink is a decentralized dating PWA on ICP with profiles, likes/matches, geolocation-based discovery, multi-token tipping (AFUK Token primary), chat, view-once images, blob storage for photos, wallet tab, intent/orientation filtering, and notifications. The backend has tip recording and a `getTopTippedUsers` query that returns a sorted list of principals by total tips received. There is no leaderboard UI and no review/rating system.
 
 ## Requested Changes (Diff)
 
 ### Add
-- New `/wallet` route and `WalletPage` component
-- Wallet tab added to the bottom navigation bar (mobile) and desktop nav, using a Wallet icon
-- WalletPage shows:
-  1. **Token Balances section**: Display balances for $USDC, $BTC, $ETH, and ICP (fetched from connected wallet / mocked if not available)
-  2. **Buy AFUK Token section**: Prominent CTA to buy AFUK Token on Base Mainnet
-     - Shows AFUK Token contract address: `0x2d0A4446f11Ff1554F4E387DA2162d8276daDE5d` with a copy button
-     - "Buy on Uniswap" button that deeplinks to Uniswap with the AFUK contract address pre-filled on Base
-     - "Buy on Base" or similar secondary link
-     - Shows AFUK token branding (logo)
-  3. Connected wallet address display
-  4. Dark glassmorphic styling consistent with rest of app (purple accents)
+- **AFUK Tipper Leaderboard page/tab**: Ranked list of top AFUK tippers (users who sent the most tips). Shows rank, avatar, name, total AFUK tipped, and a crown/medal badge for top 3. Accessible from bottom nav.
+- **Review system**: Token holders can leave a star rating (1-5) + text review on any user's profile. Reviews stored on-chain. Profile page shows average rating and review list.
+- **Backend: `LeaderboardEntry` type**: Combines principal + profile name + total tips sent (not received) for the leaderboard.
+- **Backend: `getLeaderboard` query**: Returns top N tippers (by amount sent) with their profile name and total.
+- **Backend: `Review` type**: reviewerId, targetId, rating (1-5), text, timestamp.
+- **Backend: `submitReview` mutation**: Authenticated user submits review for another user.
+- **Backend: `getReviews` query**: Returns all reviews for a given user principal.
+- **Backend: `getAverageRating` query**: Returns average star rating for a user.
 
 ### Modify
-- `Layout.tsx`: Add `/wallet` link with Wallet icon to both desktop nav and mobile bottom pill nav
-- `App.tsx`: Add lazy import and Route for WalletPage at `/wallet`
+- Bottom navigation: add Leaderboard tab icon (trophy).
+- Profile page: show star rating summary and review list beneath profile details.
+- App.tsx: add lazy-loaded LeaderboardPage route at `/leaderboard`.
+- Router: add `/leaderboard` route.
 
 ### Remove
-- Nothing removed
+- Nothing removed.
 
 ## Implementation Plan
-1. Create `src/frontend/src/pages/WalletPage.tsx` with:
-   - Header showing connected wallet address (from AuthContext)
-   - Token balances card: $USDC, $BTC, $ETH, ICP with placeholder/mock values and icons
-   - Buy AFUK section: logo, contract address with copy-to-clipboard, Uniswap deeplink button, Basescan link
-   - Dark glassmorphic styling with purple gradients
-2. Update `Layout.tsx` to add Wallet tab to both desktop and mobile nav (NAV_LINKS array)
-3. Update `App.tsx` to add lazy import for WalletPage and Route at `/wallet`
+1. Update `main.mo` to add Review type, tips-sent tracking, leaderboard query, review submit/get/average endpoints.
+2. Regenerate `backend.d.ts` bindings.
+3. Create `LeaderboardPage.tsx` with ranked list UI.
+4. Add review UI to `ProfilePage.tsx` (star display + review list + submit form).
+5. Add Leaderboard tab to bottom nav in `Layout.tsx` / `Navbar.tsx`.
+6. Register `/leaderboard` route in `App.tsx`.

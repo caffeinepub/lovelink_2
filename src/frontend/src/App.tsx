@@ -56,6 +56,7 @@ const ProfilePage = lazy(() => import("@/pages/ProfilePage"));
 const EditProfilePage = lazy(() => import("@/pages/EditProfilePage"));
 const NotificationsPage = lazy(() => import("@/pages/NotificationsPage"));
 const WalletPage = lazy(() => import("@/pages/WalletPage"));
+const LeaderboardPage = lazy(() => import("@/pages/LeaderboardPage"));
 
 function LoadingFallback() {
   return (
@@ -108,6 +109,7 @@ function AppRoutes() {
       <Route path="/profile" element={<ProfilePage />} exact />
       <Route path="/notifications" element={<NotificationsPage />} exact />
       <Route path="/wallet" element={<WalletPage />} exact />
+      <Route path="/leaderboard" element={<LeaderboardPage />} exact />
     </Suspense>
   );
 }

@@ -10,6 +10,7 @@ import Array "mo:core/Array";
 import Order "mo:core/Order";
 import Int "mo:core/Int";
 import Nat "mo:core/Nat";
+import Float "mo:core/Float";
 
 import MixinStorage "blob-storage/Mixin";
 import AccessControl "authorization/access-control";
@@ -104,6 +105,26 @@ actor {
     };
   };
 
+  type LeaderboardEntry = {
+    user : Principal;
+    name : Text;
+    totalSent : Nat;
+  };
+
+  type Review = {
+    reviewerId : Principal;
+    targetId : Principal;
+    rating : Nat;
+    text : Text;
+    timestamp : Time.Time;
+  };
+
+  module Review {
+    public func compare(r1 : Review, r2 : Review) : Order.Order {
+      Int.compare(r2.timestamp, r1.timestamp);
+    };
+  };
+
   // Storage
   let profiles = Map.empty<Principal, Profile>();
   let likes = Map.empty<Principal, Set.Set<Principal>>();
@@ -111,7 +132,9 @@ actor {
   let matches = Map.empty<Principal, Set.Set<Principal>>();
   let messages = Map.empty<Principal, List.List<Message>>();
   let tips = Map.empty<Principal, List.List<Tip>>();
+  let tipsSent = Map.empty<Principal, Nat>();
   let notifications = Map.empty<Principal, List.List<Notification>>();
+  let reviews = Map.empty<Principal, List.List<Review>>();
 
   // Profile Management
   public shared ({ caller }) func createOrUpdateProfile(profile : Profile) : async () {
@@ -324,6 +347,13 @@ actor {
     };
     addTip(user, { from = caller; to = user; amount_e8s; timestamp = Time.now() });
 
+    // Track tips sent by caller for leaderboard
+    let prevSent = switch (tipsSent.get(caller)) {
+      case (null) { 0 };
+      case (?n) { n };
+    };
+    tipsSent.add(caller, prevSent + amount_e8s);
+
     let notification : Notification = {
       id = Time.now().toText();
       user;
@@ -392,6 +422,102 @@ actor {
     };
 
     users.toArray().sort(compareTips).map(func((principal, _)) { principal });
+  };
+
+  // Leaderboard - top AFUK tippers (by amount sent)
+  public query ({ caller }) func getLeaderboard(limit : Nat) : async [LeaderboardEntry] {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can view the leaderboard.");
+    };
+
+    var entries = List.empty<(Principal, Nat)>();
+    for ((user, totalSent) in tipsSent.entries()) {
+      entries.add((user, totalSent));
+    };
+
+    func compareEntries(a : (Principal, Nat), b : (Principal, Nat)) : Order.Order {
+      Nat.compare(b.1, a.1);
+    };
+
+    let sorted = entries.toArray().sort(compareEntries);
+    // Cap to limit by iterating manually
+    let result = List.empty<LeaderboardEntry>();
+    var count = 0;
+    for ((user, totalSent) in sorted.vals()) {
+      if (count < limit) {
+        let name = switch (profiles.get(user)) {
+          case (null) { "Anonymous" };
+          case (?p) { p.name };
+        };
+        result.add({ user; name; totalSent });
+        count += 1;
+      };
+    };
+    result.toArray();
+  };
+
+  // Reviews
+  public shared ({ caller }) func submitReview(target : Principal, rating : Nat, text : Text) : async () {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can submit reviews.");
+    };
+    if (caller == target) {
+      Runtime.trap("Cannot review yourself.");
+    };
+    if (rating < 1 or rating > 5) {
+      Runtime.trap("Rating must be between 1 and 5.");
+    };
+
+    let newReview : Review = {
+      reviewerId = caller;
+      targetId = target;
+      rating;
+      text;
+      timestamp = Time.now();
+    };
+
+    var targetReviews = switch (reviews.get(target)) {
+      case (null) { List.empty<Review>() };
+      case (?list) { list };
+    };
+
+    // Replace existing review from same reviewer if present
+    let filtered = List.empty<Review>();
+    for (r in targetReviews.values()) {
+      if (r.reviewerId != caller) {
+        filtered.add(r);
+      };
+    };
+    filtered.add(newReview);
+    reviews.add(target, filtered);
+  };
+
+  public query ({ caller }) func getReviews(user : Principal) : async [Review] {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can get reviews.");
+    };
+    switch (reviews.get(user)) {
+      case (null) { [] };
+      // Fix: sort() uses implicit compare, no explicit Review.compare argument
+      case (?list) { list.toArray().sort() };
+    };
+  };
+
+  public query ({ caller }) func getAverageRating(user : Principal) : async Float {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can get ratings.");
+    };
+    switch (reviews.get(user)) {
+      case (null) { 0.0 };
+      case (?list) {
+        let arr = list.toArray();
+        if (arr.size() == 0) { return 0.0 };
+        var sum = 0;
+        for (r in arr.vals()) { sum += r.rating };
+        // Fix: use .toFloat() instead of deprecated Float.fromInt()
+        sum.toFloat() / arr.size().toFloat();
+      };
+    };
   };
 
   // Messaging
@@ -537,7 +663,9 @@ actor {
     matches.clear();
     messages.clear();
     tips.clear();
+    tipsSent.clear();
     notifications.clear();
+    reviews.clear();
   };
 
   public shared ({ caller }) func deleteProfile(user : Principal) : async () {
@@ -553,7 +681,9 @@ actor {
     matches.remove(user);
     messages.remove(user);
     tips.remove(user);
+    tipsSent.remove(user);
     notifications.remove(user);
+    reviews.remove(user);
   };
 
   // Required frontend interface functions
