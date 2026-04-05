@@ -1,7 +1,5 @@
-import { ExternalBlob } from "@/backend";
 import Layout from "@/components/Layout";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { useActor } from "@/hooks/useActor";
 import {
   ArrowLeft,
   Camera,
@@ -335,7 +333,6 @@ function ChatWindow({
   const endRef = useRef<HTMLDivElement>(null);
   const libraryRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
-  const { actor } = useActor();
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -350,16 +347,9 @@ function ChatWindow({
   const handleImageFile = async (file: File) => {
     setIsUploading(true);
     try {
-      const bytes = new Uint8Array(await file.arrayBuffer());
-      const blob = ExternalBlob.fromBytes(bytes);
-
-      if (actor) {
-        // Upload via blob storage – setProfilePicture is the available upload method
-        // We use the blob's local URL for display in this context
-        await actor.setProfilePicture(blob);
-      }
-
-      const imageUrl = blob.getDirectURL();
+      // Create a local preview URL for the view-once image display.
+      // View-once images are local-only and are not persisted to the backend.
+      const imageUrl = URL.createObjectURL(file);
       onSendViewOnce(imageUrl);
     } catch (err) {
       console.error(err);

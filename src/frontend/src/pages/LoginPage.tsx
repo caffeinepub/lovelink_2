@@ -1,14 +1,35 @@
 import { useAuth } from "@/App";
+import { useInternetIdentity } from "@/hooks/useInternetIdentity";
 import { useWalletConnect } from "@/hooks/useWalletConnect";
 import { useNavigate } from "@/router";
-import { Heart, MapPin, Shield, Wallet, Zap } from "lucide-react";
+import { Heart, KeyRound, MapPin, Shield, Wallet, Zap } from "lucide-react";
 import { motion } from "motion/react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
+// Generates a random Ethereum-style address using Web Crypto API
+async function generateWalletAddress(): Promise<string> {
+  const randomBytes = new Uint8Array(20);
+  crypto.getRandomValues(randomBytes);
+  return `0x${Array.from(randomBytes)
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("")}`;
+}
+
 export default function LoginPage() {
-  const { setLoggedIn, setCurrentUser, setWalletAddress } = useAuth();
+  const { setLoggedIn, setWalletAddress } = useAuth();
   const navigate = useNavigate();
   const { connect, isConnecting } = useWalletConnect();
+  const { login, isLoggingIn, isLoginSuccess, identity } =
+    useInternetIdentity();
+
+  // Watch for II login success
+  useEffect(() => {
+    if (isLoginSuccess && identity && !identity.getPrincipal().isAnonymous()) {
+      setLoggedIn(true);
+      navigate("/profile/edit");
+    }
+  }, [isLoginSuccess, identity, setLoggedIn, navigate]);
 
   const handleWalletConnect = async () => {
     const address = await connect();
@@ -18,18 +39,37 @@ export default function LoginPage() {
       toast.success(
         `Wallet connected: ${address.slice(0, 6)}...${address.slice(-4)}`,
       );
-      navigate("/explore");
+      navigate("/profile/edit");
     } else {
       // Demo mode — allow login without MetaMask
       setLoggedIn(true);
-      navigate("/explore");
+      navigate("/profile/edit");
     }
   };
 
   const handleIILogin = () => {
-    setCurrentUser({ name: "Explorer" });
-    setLoggedIn(true);
-    navigate("/explore");
+    login();
+  };
+
+  const [isGenerating, setIsGenerating] = useState(false);
+
+  const handleGenerateWallet = async () => {
+    setIsGenerating(true);
+    try {
+      const address = await generateWalletAddress();
+      setWalletAddress(address);
+      setLoggedIn(true);
+      toast.success(
+        `New wallet created: ${address.slice(0, 6)}...${address.slice(-4)}`,
+        {
+          description:
+            "Save your wallet address — it's your identity on LoveLink.",
+        },
+      );
+      navigate("/profile/edit");
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   return (
@@ -226,18 +266,84 @@ export default function LoginPage() {
             type="button"
             data-ocid="login.secondary_button"
             onClick={handleIILogin}
-            className="w-full py-4 px-6 rounded-2xl text-base font-ui font-semibold flex items-center justify-center gap-2.5 transition-all hover:bg-white/5 border"
+            disabled={isLoggingIn}
+            className="w-full py-4 px-6 rounded-2xl text-base font-ui font-semibold flex items-center justify-center gap-2.5 transition-all hover:bg-white/5 border disabled:opacity-60"
             style={{
               background: "oklch(0.16 0.025 265)",
               borderColor: "oklch(0.32 0.08 295 / 0.6)",
               color: "oklch(0.88 0.04 265)",
             }}
           >
-            <Shield
-              className="w-5 h-5"
-              style={{ color: "oklch(0.75 0.18 295)" }}
+            {isLoggingIn ? (
+              <>
+                <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                Connecting...
+              </>
+            ) : (
+              <>
+                <Shield
+                  className="w-5 h-5"
+                  style={{ color: "oklch(0.75 0.18 295)" }}
+                />
+                Sign in with Internet Identity
+              </>
+            )}
+          </button>
+
+          {/* Divider */}
+          <div className="flex items-center gap-3">
+            <div
+              className="flex-1 h-px"
+              style={{ background: "oklch(0.28 0.04 265)" }}
             />
-            Sign in with Internet Identity
+            <span
+              className="text-xs font-ui"
+              style={{ color: "oklch(0.45 0.04 265)" }}
+            >
+              no wallet?
+            </span>
+            <div
+              className="flex-1 h-px"
+              style={{ background: "oklch(0.28 0.04 265)" }}
+            />
+          </div>
+
+          {/* Generate New Wallet */}
+          <button
+            type="button"
+            data-ocid="login.generate_wallet_button"
+            onClick={handleGenerateWallet}
+            disabled={isGenerating}
+            className="w-full py-4 px-6 rounded-2xl text-base font-ui font-semibold flex items-center justify-center gap-2.5 transition-all hover:bg-white/5 border disabled:opacity-60"
+            style={{
+              background: "oklch(0.16 0.025 265)",
+              borderColor: "oklch(0.40 0.15 145 / 0.6)",
+              color: "oklch(0.88 0.04 265)",
+            }}
+          >
+            {isGenerating ? (
+              <>
+                <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                Generating...
+              </>
+            ) : (
+              <>
+                <KeyRound
+                  className="w-5 h-5"
+                  style={{ color: "oklch(0.72 0.20 145)" }}
+                />
+                Create a New Wallet
+                <span
+                  className="text-xs px-2 py-0.5 rounded-full font-medium"
+                  style={{
+                    background: "oklch(0.72 0.20 145 / 0.15)",
+                    color: "oklch(0.72 0.20 145)",
+                  }}
+                >
+                  Free
+                </span>
+              </>
+            )}
           </button>
         </motion.div>
 

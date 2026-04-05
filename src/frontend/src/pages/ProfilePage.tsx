@@ -3,8 +3,10 @@ import Layout from "@/components/Layout";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
+import { useInternetIdentity } from "@/hooks/useInternetIdentity";
 import {
   useGetAverageRating,
+  useGetCallerProfile,
   useGetReviews,
   useSubmitReview,
 } from "@/hooks/useQueries";
@@ -21,40 +23,6 @@ import {
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useState } from "react";
-
-const SAMPLE_PHOTOS = [
-  { url: "/assets/generated/profile-1.dim_400x500.jpg", id: "sp1" },
-  { url: "/assets/generated/profile-3.dim_400x500.jpg", id: "sp2" },
-  { url: "/assets/generated/profile-5.dim_400x500.jpg", id: "sp3" },
-];
-
-const EMPTY_SLOTS = ["e1", "e2"];
-
-const SAMPLE_INTERESTS = ["Photography", "Hiking", "Travel", "Art", "Coffee"];
-
-const SAMPLE_REVIEWS = [
-  {
-    key: "r1",
-    name: "Alex M.",
-    rating: 5,
-    text: "Amazing person, super genuine and fun to talk to! Highly recommend.",
-    time: "2 days ago",
-  },
-  {
-    key: "r2",
-    name: "Jordan K.",
-    rating: 4,
-    text: "Great vibes, interesting conversations. Would match again!",
-    time: "5 days ago",
-  },
-  {
-    key: "r3",
-    name: "Sam R.",
-    rating: 5,
-    text: "One of the most authentic profiles on here. Loved the chat!",
-    time: "1 week ago",
-  },
-];
 
 const SKELETON_IDS = ["sk-review-1", "sk-review-2", "sk-review-3"];
 
@@ -219,19 +187,31 @@ function ReviewForm({
 
 export default function ProfilePage() {
   const { currentUser } = useAuth();
+  const { identity } = useInternetIdentity();
   const navigate = useNavigate();
   const [showReviewForm, setShowReviewForm] = useState(false);
 
-  // We pass null here since this is the viewer's own profile page
-  // In a full implementation this would take a principal param
-  const { data: reviews = [], isLoading: reviewsLoading } = useGetReviews(null);
-  const { data: avgRating } = useGetAverageRating(null);
+  // Get the current user's ICP principal for reviews
+  const callerPrincipal =
+    identity && !identity.getPrincipal().isAnonymous()
+      ? identity.getPrincipal()
+      : null;
+
+  // Fetch real backend profile data
+  const { data: backendProfile, isLoading: profileLoading } =
+    useGetCallerProfile();
+
+  // Pass the caller's own principal to load their reviews
+  const { data: reviews = [], isLoading: reviewsLoading } =
+    useGetReviews(callerPrincipal);
+  const { data: avgRating } = useGetAverageRating(callerPrincipal);
 
   const submitReview = useSubmitReview();
 
   const handleSubmitReview = (rating: number, text: string) => {
+    if (!callerPrincipal) return;
     submitReview.mutate(
-      { target: null as any, rating, text },
+      { target: callerPrincipal, rating, text },
       {
         onSuccess: () => {
           setShowReviewForm(false);
@@ -246,26 +226,72 @@ export default function ProfilePage() {
     FunNow: "\u26A1 Fun now",
   };
 
-  const displayReviews =
-    reviews.length > 0
-      ? reviews.map((r, i) => ({
-          key: `${r.reviewerId.toString()}-${i}`,
-          name: `${r.reviewerId.toString().slice(0, 8)}...`,
-          rating: Number(r.rating),
-          text: r.text,
-          time: new Date(Number(r.timestamp) / 1_000_000).toLocaleDateString(),
-        }))
-      : SAMPLE_REVIEWS;
+  // Use backend data if available, fall back to currentUser context only for fields not in backend
+  const displayName =
+    backendProfile?.name && backendProfile.name !== ""
+      ? backendProfile.name
+      : currentUser.name;
+
+  // Show age only if it exists in the backend profile
+  const displayAge =
+    backendProfile?.age && Number(backendProfile.age) > 0
+      ? Number(backendProfile.age)
+      : null;
+
+  // Show bio only if it exists in the backend profile
+  const displayBio =
+    backendProfile?.bio && backendProfile.bio !== ""
+      ? backendProfile.bio
+      : null;
+
+  // Show interests only if they exist in the backend profile
+  const displayInterests =
+    backendProfile?.interests && backendProfile.interests.length > 0
+      ? backendProfile.interests
+      : [];
+
+  // Avatar: use backend photo URL if available
+  let avatarUrl: string | undefined;
+  try {
+    const photoUrl = backendProfile?.photo?.getDirectURL();
+    // Only use real storage URLs (not dead blob: URLs)
+    if (photoUrl && !photoUrl.startsWith("blob:")) {
+      avatarUrl = photoUrl;
+    }
+  } catch {
+    avatarUrl = undefined;
+  }
+
+  // Build gallery: use uploaded photos from backend
+  const galleryPhotos: string[] = [];
+  if (avatarUrl) galleryPhotos.push(avatarUrl);
+  if (backendProfile && (backendProfile as any).photos) {
+    for (const p of (backendProfile as any).photos) {
+      try {
+        const u = p?.getDirectURL?.();
+        if (u && !u.startsWith("blob:") && u !== avatarUrl)
+          galleryPhotos.push(u);
+      } catch {
+        /* skip */
+      }
+    }
+  }
+  const emptySlotCount = Math.max(0, 5 - galleryPhotos.length);
+  const emptySlotIds = Array.from(
+    { length: emptySlotCount },
+    (_, i) => `empty-${i}`,
+  );
+
+  const displayReviews = reviews.map((r, i) => ({
+    key: `${r.reviewerId.toString()}-${i}`,
+    name: `${r.reviewerId.toString().slice(0, 8)}...`,
+    rating: Number(r.rating),
+    text: r.text,
+    time: new Date(Number(r.timestamp) / 1_000_000).toLocaleDateString(),
+  }));
 
   const displayAvgRating =
-    avgRating !== undefined && avgRating > 0
-      ? avgRating.toFixed(1)
-      : SAMPLE_REVIEWS.reduce((s, r) => s + r.rating, 0) / SAMPLE_REVIEWS.length
-        ? (
-            SAMPLE_REVIEWS.reduce((s, r) => s + r.rating, 0) /
-            SAMPLE_REVIEWS.length
-          ).toFixed(1)
-        : "5.0";
+    avgRating !== undefined && avgRating > 0 ? avgRating.toFixed(1) : null;
 
   return (
     <Layout>
@@ -301,7 +327,7 @@ export default function ProfilePage() {
         >
           {/* Header card */}
           <div
-            className="rounded-2xl overflow-hidden"
+            className="rounded-2xl"
             style={{
               background: "oklch(0.15 0.025 265 / 0.75)",
               backdropFilter: "blur(16px)",
@@ -310,7 +336,7 @@ export default function ProfilePage() {
             data-ocid="profile.panel"
           >
             <div
-              className="h-36 relative"
+              className="h-36 relative overflow-hidden rounded-t-2xl"
               style={{
                 background:
                   "linear-gradient(135deg, oklch(0.55 0.24 295 / 0.3), oklch(0.62 0.24 340 / 0.3))",
@@ -326,22 +352,51 @@ export default function ProfilePage() {
             </div>
 
             <div className="px-6 pb-6">
-              <div className="flex items-end gap-4 -mt-12 mb-4">
-                <div
-                  className="w-24 h-24 rounded-2xl overflow-hidden flex-shrink-0 border-4 bg-cover bg-center"
-                  style={{
-                    backgroundImage: `url(${SAMPLE_PHOTOS[0].url})`,
-                    borderColor: "oklch(0.15 0.025 265)",
-                    boxShadow: "0 0 20px oklch(0.55 0.24 295 / 0.3)",
-                  }}
-                />
-                <div className="pb-1">
-                  <h2
-                    className="font-display text-3xl font-bold"
-                    style={{ color: "oklch(0.96 0.01 265)" }}
+              <div className="flex items-end gap-4 -mt-12 mb-4 relative z-10">
+                {profileLoading ? (
+                  <Skeleton
+                    className="w-24 h-24 rounded-2xl flex-shrink-0"
+                    style={{ background: "oklch(0.20 0.03 265)" }}
+                  />
+                ) : (
+                  <div
+                    className="w-24 h-24 rounded-2xl overflow-hidden flex-shrink-0 border-4 flex items-center justify-center"
+                    style={{
+                      backgroundImage: avatarUrl
+                        ? `url(${avatarUrl})`
+                        : undefined,
+                      backgroundSize: "cover",
+                      backgroundPosition: "center",
+                      backgroundColor: avatarUrl
+                        ? undefined
+                        : "oklch(0.20 0.03 295)",
+                      borderColor: "oklch(0.15 0.025 265)",
+                      boxShadow: "0 0 20px oklch(0.55 0.24 295 / 0.3)",
+                    }}
                   >
-                    {currentUser.name}, 27
-                  </h2>
+                    {!avatarUrl && (
+                      <Camera
+                        className="w-8 h-8"
+                        style={{ color: "oklch(0.50 0.10 295)" }}
+                      />
+                    )}
+                  </div>
+                )}
+                <div className="pb-1">
+                  {profileLoading ? (
+                    <Skeleton
+                      className="h-8 w-40 mb-2"
+                      style={{ background: "oklch(0.20 0.03 265)" }}
+                    />
+                  ) : (
+                    <h2
+                      className="font-display text-3xl font-bold"
+                      style={{ color: "oklch(0.96 0.01 265)" }}
+                    >
+                      {displayName}
+                      {displayAge !== null ? `, ${displayAge}` : ""}
+                    </h2>
+                  )}
                   <div className="flex flex-wrap items-center gap-2 mt-1">
                     <span
                       className="inline-flex items-center gap-1 text-xs font-ui font-medium px-2 py-0.5 rounded-full"
@@ -369,30 +424,52 @@ export default function ProfilePage() {
                 </div>
               </div>
 
-              <p
-                className="text-sm leading-relaxed mb-5"
-                style={{ color: "oklch(0.72 0.04 265)" }}
-              >
-                Adventure seeker ✨ Coffee addict ☕ Love hiking, photography,
-                and discovering hidden city gems. Looking for someone genuine to
-                share new experiences with.
-              </p>
+              {/* Bio - only show if exists */}
+              {profileLoading ? (
+                <div className="space-y-2 mb-5">
+                  <Skeleton
+                    className="h-4 w-full"
+                    style={{ background: "oklch(0.20 0.03 265)" }}
+                  />
+                  <Skeleton
+                    className="h-4 w-3/4"
+                    style={{ background: "oklch(0.20 0.03 265)" }}
+                  />
+                </div>
+              ) : displayBio ? (
+                <p
+                  className="text-sm leading-relaxed mb-5"
+                  style={{ color: "oklch(0.72 0.04 265)" }}
+                >
+                  {displayBio}
+                </p>
+              ) : (
+                <p
+                  className="text-sm leading-relaxed mb-5 italic"
+                  style={{ color: "oklch(0.45 0.04 265)" }}
+                >
+                  No bio yet — tap Edit Profile to add one.
+                </p>
+              )}
 
-              <div className="flex flex-wrap gap-2">
-                {SAMPLE_INTERESTS.map((interest) => (
-                  <span
-                    key={interest}
-                    className="px-3 py-1 rounded-full text-xs font-ui font-medium"
-                    style={{
-                      background: "oklch(0.20 0.03 265)",
-                      border: "1px solid oklch(0.28 0.04 265)",
-                      color: "oklch(0.72 0.04 265)",
-                    }}
-                  >
-                    {interest}
-                  </span>
-                ))}
-              </div>
+              {/* Interests */}
+              {displayInterests.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {displayInterests.map((interest) => (
+                    <span
+                      key={interest}
+                      className="px-3 py-1 rounded-full text-xs font-ui font-medium"
+                      style={{
+                        background: "oklch(0.20 0.03 265)",
+                        border: "1px solid oklch(0.28 0.04 265)",
+                        color: "oklch(0.72 0.04 265)",
+                      }}
+                    >
+                      {interest}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 
@@ -413,32 +490,44 @@ export default function ProfilePage() {
                 className="w-4 h-4"
                 style={{ color: "oklch(0.70 0.18 295)" }}
               />
-              PHOTOS ({SAMPLE_PHOTOS.length}/5)
+              PHOTOS ({galleryPhotos.length}/5)
             </h3>
-            <div className="grid grid-cols-3 sm:grid-cols-5 gap-3">
-              {SAMPLE_PHOTOS.map(({ url, id }) => (
-                <div
-                  key={id}
-                  className="aspect-square rounded-xl overflow-hidden bg-cover bg-center"
-                  style={{ backgroundImage: `url(${url})` }}
-                />
-              ))}
-              {EMPTY_SLOTS.map((slotId) => (
-                <div
-                  key={slotId}
-                  className="aspect-square rounded-xl flex items-center justify-center"
-                  style={{
-                    background: "oklch(0.18 0.025 265)",
-                    border: "1px dashed oklch(0.30 0.04 265)",
-                  }}
-                >
-                  <Camera
-                    className="w-6 h-6"
-                    style={{ color: "oklch(0.40 0.04 265)" }}
+            {profileLoading ? (
+              <div className="grid grid-cols-3 sm:grid-cols-5 gap-3">
+                {["s1", "s2", "s3", "s4", "s5"].map((id) => (
+                  <Skeleton
+                    key={id}
+                    className="aspect-square rounded-xl"
+                    style={{ background: "oklch(0.20 0.03 265)" }}
                   />
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            ) : (
+              <div className="grid grid-cols-3 sm:grid-cols-5 gap-3">
+                {galleryPhotos.map((url) => (
+                  <div
+                    key={url}
+                    className="aspect-square rounded-xl overflow-hidden bg-cover bg-center"
+                    style={{ backgroundImage: `url(${url})` }}
+                  />
+                ))}
+                {emptySlotIds.map((slotId) => (
+                  <div
+                    key={slotId}
+                    className="aspect-square rounded-xl flex items-center justify-center"
+                    style={{
+                      background: "oklch(0.18 0.025 265)",
+                      border: "1px dashed oklch(0.30 0.04 265)",
+                    }}
+                  >
+                    <Camera
+                      className="w-6 h-6"
+                      style={{ color: "oklch(0.40 0.04 265)" }}
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Stats */}
@@ -461,7 +550,7 @@ export default function ProfilePage() {
                   backgroundClip: "text",
                 }}
               >
-                4
+                0
               </div>
               <div
                 className="text-sm flex items-center justify-center gap-1"
@@ -492,7 +581,7 @@ export default function ProfilePage() {
                   backgroundClip: "text",
                 }}
               >
-                1.2K
+                0
               </div>
               <div
                 className="text-sm flex items-center justify-center gap-1"
@@ -535,37 +624,39 @@ export default function ProfilePage() {
                     Reviews
                   </span>
                 </div>
-                {/* Average rating badge */}
-                <div
-                  className="flex items-center gap-1.5 px-3 py-1 rounded-full"
-                  style={{
-                    background: "oklch(0.20 0.04 295 / 0.50)",
-                    border: "1px solid oklch(0.55 0.24 295 / 0.25)",
-                  }}
-                >
-                  <Star
-                    className="w-3.5 h-3.5"
+                {/* Average rating badge - only show if we have real ratings */}
+                {displayAvgRating && (
+                  <div
+                    className="flex items-center gap-1.5 px-3 py-1 rounded-full"
                     style={{
-                      color: "oklch(0.78 0.18 85)",
-                      fill: "oklch(0.78 0.18 85)",
+                      background: "oklch(0.20 0.04 295 / 0.50)",
+                      border: "1px solid oklch(0.55 0.24 295 / 0.25)",
                     }}
-                  />
-                  <span
-                    className="text-xs font-bold"
-                    style={{ color: "oklch(0.88 0.06 265)" }}
                   >
-                    {displayAvgRating}
-                  </span>
-                  <span
-                    className="text-xs"
-                    style={{ color: "oklch(0.50 0.03 265)" }}
-                  >
-                    ({displayReviews.length})
-                  </span>
-                </div>
+                    <Star
+                      className="w-3.5 h-3.5"
+                      style={{
+                        color: "oklch(0.78 0.18 85)",
+                        fill: "oklch(0.78 0.18 85)",
+                      }}
+                    />
+                    <span
+                      className="text-xs font-bold"
+                      style={{ color: "oklch(0.88 0.06 265)" }}
+                    >
+                      {displayAvgRating}
+                    </span>
+                    <span
+                      className="text-xs"
+                      style={{ color: "oklch(0.50 0.03 265)" }}
+                    >
+                      ({displayReviews.length})
+                    </span>
+                  </div>
+                )}
               </div>
 
-              {/* Write review button — hidden on own profile in real app */}
+              {/* Write review button */}
               <button
                 type="button"
                 onClick={() => setShowReviewForm((v) => !v)}

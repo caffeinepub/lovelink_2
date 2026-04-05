@@ -5,7 +5,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useActor } from "@/hooks/useActor";
+import { useGetCallerProfile } from "@/hooks/useQueries";
 import { useNavigate } from "@/router";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
   Camera,
@@ -17,20 +19,18 @@ import {
   X,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
-type PhotoSlot = { url: string; slotId: string; uploading?: boolean } | null;
+type PhotoSlot = {
+  previewUrl: string; // local object URL or remote URL for display
+  bytes: Uint8Array<ArrayBuffer> | null; // raw bytes to upload — null means existing remote photo (no re-upload)
+  slotId: string;
+} | null;
 
-const INITIAL_PHOTOS: PhotoSlot[] = [
-  { url: "/assets/generated/profile-1.dim_400x500.jpg", slotId: "slot-0" },
-  { url: "/assets/generated/profile-3.dim_400x500.jpg", slotId: "slot-1" },
-  null,
-  null,
-  null,
-];
+const INITIAL_PHOTOS: PhotoSlot[] = [null, null, null, null, null];
 
-// ── ImageSourceSheet ────────────────────────────────────────────────────────
+// ── ImageSourceSheet ─────────────────────────────────────────────────────
 function ImageSourceSheet({
   onChooseLibrary,
   onTakePhoto,
@@ -124,77 +124,85 @@ function ImageSourceSheet({
   );
 }
 
-// ── Main Component ──────────────────────────────────────────────────────────
+// ── Main Component ─────────────────────────────────────────────────────
 export default function EditProfilePage() {
   const { currentUser, setCurrentUser } = useAuth();
   const navigate = useNavigate();
   const { actor } = useActor();
+  const queryClient = useQueryClient();
+
+  // Load existing profile from backend to pre-populate form
+  const { data: backendProfile, isFetched: profileFetched } =
+    useGetCallerProfile();
 
   const [name, setName] = useState(currentUser.name);
-  const [age, setAge] = useState("27");
-  const [bio, setBio] = useState(
-    "Adventure seeker ✨ Coffee addict ☕ Love hiking, photography, and discovering hidden city gems.",
-  );
+  const [age, setAge] = useState("");
+  const [bio, setBio] = useState("");
   const [gender, setGender] = useState<Gender>(currentUser.gender);
   const [orientation, setOrientation] = useState<Orientation>(
     currentUser.orientation,
   );
   const [intent, setIntent] = useState<Intent>(currentUser.intent);
-  const [interests, setInterests] = useState<string[]>([
-    "Photography",
-    "Hiking",
-    "Travel",
-    "Art",
-    "Coffee",
-  ]);
+  const [interests, setInterests] = useState<string[]>([]);
   const [interestInput, setInterestInput] = useState("");
   const [photos, setPhotos] = useState<PhotoSlot[]>(INITIAL_PHOTOS);
   const [isSaving, setIsSaving] = useState(false);
+  const [latitude, setLatitude] = useState<number | undefined>();
+  const [longitude, setLongitude] = useState<number | undefined>();
+
+  // Pre-populate form fields once backend profile loads
+  // Using profileFetched + a ref so we only seed once per mount, but do seed
+  // as soon as data is available (even from cache)
+  const seededRef = useRef(false);
+  useEffect(() => {
+    if (!profileFetched || seededRef.current) return;
+    seededRef.current = true;
+
+    if (backendProfile) {
+      if (backendProfile.name && backendProfile.name !== "") {
+        setName(backendProfile.name);
+      }
+      if (backendProfile.age && Number(backendProfile.age) > 0) {
+        setAge(String(Number(backendProfile.age)));
+      }
+      if (backendProfile.bio && backendProfile.bio !== "") {
+        setBio(backendProfile.bio);
+      }
+      if (backendProfile.interests && backendProfile.interests.length > 0) {
+        setInterests(backendProfile.interests);
+      }
+      if (backendProfile.latitude !== undefined) {
+        setLatitude(backendProfile.latitude);
+      }
+      if (backendProfile.longitude !== undefined) {
+        setLongitude(backendProfile.longitude);
+      }
+      // Pre-fill existing photo in first slot as a remote preview (no bytes — won't re-upload unless replaced)
+      if (backendProfile.photo) {
+        try {
+          const url = backendProfile.photo.getDirectURL();
+          if (url && !url.startsWith("blob:")) {
+            setPhotos((prev) => {
+              const next = [...prev];
+              next[0] = {
+                previewUrl: url,
+                bytes: null, // null = existing remote photo, skip re-upload
+                slotId: "slot-existing-0",
+              };
+              return next;
+            });
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+  }, [profileFetched, backendProfile]);
 
   // Sheet state
   const [sheetSlot, setSheetSlot] = useState<number | null>(null);
   const libraryRefs = useRef<(HTMLInputElement | null)[]>([]);
   const cameraRefs = useRef<(HTMLInputElement | null)[]>([]);
-
-  const uploadPhoto = async (idx: number, file: File) => {
-    // Preview immediately
-    const previewUrl = URL.createObjectURL(file);
-    setPhotos((prev) => {
-      const next = [...prev];
-      next[idx] = { url: previewUrl, slotId: `slot-${idx}`, uploading: true };
-      return next;
-    });
-
-    try {
-      const bytes = new Uint8Array(await file.arrayBuffer());
-      const blob = ExternalBlob.fromBytes(bytes);
-
-      if (actor) {
-        await actor.setProfilePicture(blob);
-      }
-
-      const finalUrl = blob.getDirectURL();
-      setPhotos((prev) => {
-        const next = [...prev];
-        next[idx] = { url: finalUrl, slotId: `slot-${idx}`, uploading: false };
-        return next;
-      });
-      toast.success("Photo uploaded! 🖼️");
-    } catch (err) {
-      console.error(err);
-      toast.error("Upload failed. Please try again.");
-      // Revert to preview on error (still show it locally)
-      setPhotos((prev) => {
-        const next = [...prev];
-        next[idx] = {
-          url: previewUrl,
-          slotId: `slot-${idx}`,
-          uploading: false,
-        };
-        return next;
-      });
-    }
-  };
 
   const handleFileChange = (
     idx: number,
@@ -204,12 +212,32 @@ export default function EditProfilePage() {
     if (!file) return;
     // Reset input so same file can be re-selected
     e.target.value = "";
-    uploadPhoto(idx, file);
+
+    // Read bytes and create a local preview URL
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const arrayBuffer = reader.result as ArrayBuffer;
+      const bytes = new Uint8Array(arrayBuffer) as Uint8Array<ArrayBuffer>;
+      const previewUrl = URL.createObjectURL(
+        new Blob([bytes], { type: file.type }),
+      );
+      setPhotos((prev) => {
+        const next = [...prev];
+        next[idx] = { previewUrl, bytes, slotId: `slot-${idx}` };
+        return next;
+      });
+    };
+    reader.readAsArrayBuffer(file);
   };
 
   const removePhoto = (idx: number) => {
     setPhotos((prev) => {
       const next = [...prev];
+      const slot = next[idx];
+      // Only revoke blob: URLs (not remote URLs)
+      if (slot?.previewUrl.startsWith("blob:")) {
+        URL.revokeObjectURL(slot.previewUrl);
+      }
       next[idx] = null;
       return next;
     });
@@ -237,11 +265,55 @@ export default function EditProfilePage() {
       return;
     }
     setIsSaving(true);
-    await new Promise((r) => setTimeout(r, 700));
-    setCurrentUser({ name: name.trim(), gender, orientation, intent });
-    setIsSaving(false);
-    toast.success("Profile saved! 💕");
-    navigate("/profile");
+    try {
+      if (actor) {
+        const now = BigInt(Date.now()) * 1_000_000n;
+
+        // Find the first slot that has NEW bytes (non-null, non-empty) to upload
+        const newPhotoSlot = photos.find(
+          (slot) => slot?.bytes != null && slot.bytes.length > 0,
+        );
+
+        let photo: ExternalBlob | undefined;
+        if (newPhotoSlot?.bytes) {
+          // New photo selected — upload raw bytes via ExternalBlob
+          photo = ExternalBlob.fromBytes(
+            newPhotoSlot.bytes as Uint8Array<ArrayBuffer>,
+          );
+        } else if (backendProfile?.photo) {
+          // No new photo — keep the existing one from backend
+          photo = backendProfile.photo as ExternalBlob;
+        }
+        // If photo is undefined (no existing, no new), save without photo
+
+        await actor.saveCallerUserProfile({
+          name: name.trim(),
+          age: BigInt(ageNum),
+          bio: bio.trim(),
+          interests,
+          isComplete: true,
+          createdAt: now,
+          updatedAt: now,
+          photo,
+          latitude,
+          longitude,
+        });
+      }
+
+      // Update local auth context with all user fields
+      setCurrentUser({ name: name.trim(), gender, orientation, intent });
+
+      // Invalidate the profile cache so ProfilePage and next EditProfile open fetch fresh data
+      await queryClient.invalidateQueries({ queryKey: ["callerProfile"] });
+
+      toast.success("Profile saved! 💕");
+      navigate("/profile");
+    } catch (err: any) {
+      console.error("Save profile error:", err);
+      toast.error(err?.message || "Failed to save profile");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   function OptionButton<T extends string>({
@@ -382,35 +454,19 @@ export default function EditProfilePage() {
                       <>
                         <div
                           className="w-full h-full rounded-xl bg-cover bg-center"
-                          style={{ backgroundImage: `url(${slot.url})` }}
+                          style={{ backgroundImage: `url(${slot.previewUrl})` }}
                         />
-                        {/* Upload spinner overlay */}
-                        {slot.uploading && (
-                          <div
-                            className="absolute inset-0 rounded-xl flex items-center justify-center"
-                            style={{
-                              background: "oklch(0.10 0.02 265 / 0.65)",
-                            }}
-                          >
-                            <span
-                              className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"
-                              data-ocid={`profile.loading_state.${idx + 1}`}
-                            />
-                          </div>
-                        )}
-                        {!slot.uploading && (
-                          <button
-                            type="button"
-                            onClick={() => removePhoto(idx)}
-                            className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full flex items-center justify-center"
-                            style={{
-                              background: "oklch(0.60 0.22 27)",
-                              color: "white",
-                            }}
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        )}
+                        <button
+                          type="button"
+                          onClick={() => removePhoto(idx)}
+                          className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full flex items-center justify-center"
+                          style={{
+                            background: "oklch(0.60 0.22 27)",
+                            color: "white",
+                          }}
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
                       </>
                     ) : (
                       <button
@@ -453,6 +509,12 @@ export default function EditProfilePage() {
                 );
               })}
             </div>
+            <p
+              className="text-xs mt-2"
+              style={{ color: "oklch(0.50 0.04 265)" }}
+            >
+              Photos are uploaded when you save your profile.
+            </p>
           </div>
 
           {/* Name */}
@@ -489,6 +551,7 @@ export default function EditProfilePage() {
               min="18"
               max="100"
               value={age}
+              placeholder="Enter your age"
               onChange={(e) => setAge(e.target.value)}
               className="rounded-xl"
               style={{
@@ -512,6 +575,7 @@ export default function EditProfilePage() {
               value={bio}
               onChange={(e) => setBio(e.target.value)}
               rows={3}
+              placeholder="Tell others about yourself..."
               className="rounded-xl resize-none"
               style={{
                 background: "oklch(0.18 0.025 265)",
@@ -662,21 +726,31 @@ export default function EditProfilePage() {
               type="button"
               className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-ui font-medium transition-all hover:opacity-80"
               style={{
-                background: "oklch(0.18 0.025 265)",
-                border: "1px solid oklch(0.28 0.04 265)",
+                background:
+                  latitude !== undefined
+                    ? "oklch(0.55 0.24 295 / 0.15)"
+                    : "oklch(0.18 0.025 265)",
+                border:
+                  latitude !== undefined
+                    ? "1px solid oklch(0.55 0.24 295 / 0.5)"
+                    : "1px solid oklch(0.28 0.04 265)",
                 color: "oklch(0.70 0.18 295)",
               }}
               onClick={() => {
                 if (navigator.geolocation) {
                   navigator.geolocation.getCurrentPosition(
-                    () => toast.success("Location shared! 📍"),
+                    (pos) => {
+                      setLatitude(pos.coords.latitude);
+                      setLongitude(pos.coords.longitude);
+                      toast.success("Location shared! 📍");
+                    },
                     () => toast.error("Location access denied"),
                   );
                 }
               }}
             >
               <MapPin className="w-4 h-4" />
-              Share Location
+              {latitude !== undefined ? "Location Shared ✓" : "Share Location"}
             </button>
           </div>
 
@@ -697,7 +771,7 @@ export default function EditProfilePage() {
             {isSaving ? (
               <>
                 <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />{" "}
-                Saving...
+                Uploading & Saving...
               </>
             ) : (
               <>

@@ -498,7 +498,6 @@ actor {
     };
     switch (reviews.get(user)) {
       case (null) { [] };
-      // Fix: sort() uses implicit compare, no explicit Review.compare argument
       case (?list) { list.toArray().sort() };
     };
   };
@@ -561,10 +560,22 @@ actor {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
       Runtime.trap("Unauthorized: Only users can get messages.");
     };
-    switch (messages.get(caller)) {
+    // Collect messages sent BY caller TO user
+    let sentByMe : [Message] = switch (messages.get(caller)) {
       case (null) { [] };
-      case (?list) { list.toArray().sort() };
+      case (?list) { list.toArray().filter(func(m : Message) : Bool { m.receiver == user }) };
     };
+    // Collect messages sent BY user TO caller
+    let sentByThem : [Message] = switch (messages.get(user)) {
+      case (null) { [] };
+      case (?list) { list.toArray().filter(func(m : Message) : Bool { m.receiver == caller }) };
+    };
+    // Merge and sort by timestamp
+    let combined = Array.tabulate(
+      sentByMe.size() + sentByThem.size(),
+      func(i) { if (i < sentByMe.size()) { sentByMe[i] } else { sentByThem[i - sentByMe.size()] } }
+    );
+    combined.sort();
   };
 
   // Notifications

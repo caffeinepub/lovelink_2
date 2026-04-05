@@ -9,6 +9,19 @@ const AFUK_CONTRACT = "0x2d0A4446f11Ff1554F4E387DA2162d8276daDE5d";
 
 const TOKENS = [
   {
+    symbol: "AFUK",
+    name: "AFUK Token",
+    bg: "oklch(0.20 0.06 295 / 0.4)",
+    border: "oklch(0.55 0.24 295 / 0.4)",
+    icon: (
+      <img
+        src="/assets/afuktokenlogo1-019d58aa-bef5-707a-b33c-a98d6dbac4d8.png"
+        alt="AFUK"
+        className="w-4 h-4 object-contain"
+      />
+    ),
+  },
+  {
     symbol: "USDC",
     name: "USD Coin",
     bg: "oklch(0.20 0.05 230 / 0.4)",

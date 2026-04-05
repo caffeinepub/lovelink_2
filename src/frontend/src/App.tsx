@@ -3,7 +3,14 @@ import { Toaster } from "@/components/ui/sonner";
 import { useInternetIdentity } from "@/hooks/useInternetIdentity";
 import { useWalletConnect } from "@/hooks/useWalletConnect";
 import { Navigate, Route, RouterProvider, useRouterPath } from "@/router";
-import { Suspense, createContext, lazy, useContext, useState } from "react";
+import {
+  Suspense,
+  createContext,
+  lazy,
+  useContext,
+  useEffect,
+  useState,
+} from "react";
 
 // ─── Auth Context ───
 export type Orientation = "Straight" | "Gay" | "Bisexual" | "Other";
@@ -85,8 +92,16 @@ function LoadingFallback() {
 }
 
 function AppRoutes() {
-  const { isLoggedIn } = useAuth();
+  const { isLoggedIn, setLoggedIn } = useAuth();
+  const { identity } = useInternetIdentity();
   const path = useRouterPath();
+
+  // Persist II login across page reloads
+  useEffect(() => {
+    if (identity && !identity.getPrincipal().isAnonymous()) {
+      setLoggedIn(true);
+    }
+  }, [identity, setLoggedIn]);
 
   if (!isLoggedIn) {
     return (

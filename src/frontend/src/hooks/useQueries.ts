@@ -11,7 +11,7 @@ export function useGetCallerProfile() {
     queryKey: ["callerProfile"],
     queryFn: async () => {
       if (!actor) throw new Error("Actor not available");
-      return actor.getCallerProfile();
+      return actor.getCallerUserProfile();
     },
     enabled: !!actor && !actorFetching,
     retry: false,
@@ -249,11 +249,11 @@ export function useGetReviews(
   return useQuery<import("@/backend.d").Review[]>({
     queryKey: ["reviews", user?.toString() ?? "caller"],
     queryFn: async () => {
-      if (!actor) return [];
-      if (!user) return [];
+      if (!actor || !user) return [];
       return (actor as any).getReviews(user);
     },
-    enabled: !!actor && !actorFetching,
+    // Only run when both actor AND a valid user principal are available
+    enabled: !!actor && !actorFetching && !!user,
   });
 }
 
